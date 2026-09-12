@@ -3145,8 +3145,8 @@ function interaction.clickable(instance, options)
 				right_clicked:fire()
 			end
 		end)
-		instance.MouseButton3Click:Connect(function()
-			if states.enabled:get() then
+		input_service.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton3 and states.enabled:get() and states.hovered:get() then
 				middle_clicked:fire()
 			end
 		end)
