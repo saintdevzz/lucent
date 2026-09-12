@@ -1,13 +1,42 @@
 -- lucent demo
--- put lucent.lua next to this localscript, or drop it in replicatedstorage
+-- runs straight off the repo, or alongside a local lucent.lua
 
 local replicated = game:GetService("ReplicatedStorage")
+local source = "https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua"
 
-local lucent
-if script:FindFirstChild("lucent") then
-	lucent = require(script.lucent)
-else
-	lucent = require(replicated:WaitForChild("lucent"))
+local function local_copy()
+	local places = { replicated }
+	if script then
+		table.insert(places, 1, script)
+	end
+	for _, parent in ipairs(places) do
+		local found = parent:FindFirstChild("lucent")
+		if found then
+			return found
+		end
+	end
+	return nil
+end
+
+local function acquire()
+	local found = local_copy()
+	if found then
+		return require(found)
+	end
+	local compile = loadstring or load
+	if not compile then
+		return nil
+	end
+	local ok, result = pcall(function()
+		return compile(game:GetService("HttpService"):HttpGet(source))()
+	end)
+	return ok and result or nil
+end
+
+local lucent = acquire()
+
+if not lucent then
+	error("lucent unavailable: turn on http requests or drop lucent.lua in replicatedstorage")
 end
 
 local brand_logo = nil
