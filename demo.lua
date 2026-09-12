@@ -2,10 +2,11 @@
 -- runs straight off the repo, or alongside a local lucent.lua
 
 local replicated = game:GetService("ReplicatedStorage")
-local source = "https://raw.githubusercontent.com/saintdevzz/lucent/400b279/lucent.lua?v=2"
+local source = "https://raw.githubusercontent.com/saintdevzz/lucent/e269d93/lucent.lua?v=2"
 
 local fallbacks = {
 	"https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua?v=2",
+	"https://cdn.jsdelivr.net/gh/saintdevzz/lucent@e269d93/lucent.lua",
 	"https://cdn.jsdelivr.net/gh/saintdevzz/lucent@main/lucent.lua",
 }
 
