@@ -2,7 +2,7 @@
 -- runs straight off the repo, or alongside a local lucent.lua
 
 local replicated = game:GetService("ReplicatedStorage")
-local source = "https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua"
+local source = "https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua?v=2"
 
 local function local_copy()
 	local places = { replicated }

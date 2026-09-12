@@ -7,7 +7,7 @@ a single file ui kit for roblox. one modulescript, no dependencies, everything a
 running from an executor, grab it off the repo:
 
 ```lua
-local lucent = loadstring(game:HttpGet("https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua"))()
+local lucent = loadstring(game:HttpGet("https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua?v=2"))()
 ```
 
 `demo.lua` already does that by itself, so you can run it as-is. it tries `game:HttpGet` first and falls through `HttpService` and the executor `request` functions, and it looks for a local `lucent.lua` next to itself or in `ReplicatedStorage` before downloading anything. if it can't get the library it tells you the actual reason instead of just dying.
