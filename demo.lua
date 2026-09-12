@@ -18,25 +18,87 @@ local function local_copy()
 	return nil
 end
 
-local function acquire()
-	local found = local_copy()
-	if found then
-		return require(found)
-	end
-	local compile = loadstring or load
-	if not compile then
-		return nil
-	end
-	local ok, result = pcall(function()
-		return compile(game:GetService("HttpService"):HttpGet(source))()
+local function fetchers()
+	local http = game:GetService("HttpService")
+	local attempts = {}
+
+	table.insert(attempts, function()
+		return game:HttpGet(source)
 	end)
-	return ok and result or nil
+	table.insert(attempts, function()
+		return http:HttpGet(source)
+	end)
+	table.insert(attempts, function()
+		return http:GetAsync(source)
+	end)
+
+	local external = request or http_request
+	if external then
+		table.insert(attempts, function()
+			local reply = external({ Url = source, Method = "GET" })
+			return reply.Body or reply.body
+		end)
+	end
+
+	if syn and syn.request then
+		table.insert(attempts, function()
+			local reply = syn.request({ Url = source, Method = "GET" })
+			return reply.Body or reply.body
+		end)
+	end
+
+	return attempts
 end
 
-local lucent = acquire()
+local function download()
+	local reason = "nothing to try"
+	for _, attempt in ipairs(fetchers()) do
+		local ok, body = pcall(attempt)
+		if ok and type(body) == "string" and #body > 0 then
+			return body
+		end
+		if not ok then
+			reason = tostring(body)
+		end
+	end
+	return nil, reason
+end
+
+local function acquire()
+	local existing = local_copy()
+	if existing then
+		local ok, module = pcall(require, existing)
+		if ok then
+			return module
+		end
+	end
+
+	local compile = loadstring or load
+	if not compile then
+		return nil, "this environment has no loadstring"
+	end
+
+	local body, download_error = download()
+	if not body then
+		return nil, "download failed, " .. tostring(download_error)
+	end
+
+	local chunk, compile_error = compile(body, "lucent")
+	if not chunk then
+		return nil, "compile failed, " .. tostring(compile_error)
+	end
+
+	local ok, loaded = pcall(chunk)
+	if not ok then
+		return nil, "lucent threw on load, " .. tostring(loaded)
+	end
+	return loaded
+end
+
+local lucent, failure = acquire()
 
 if not lucent then
-	error("lucent unavailable: turn on http requests or drop lucent.lua in replicatedstorage")
+	error("lucent unavailable: " .. tostring(failure), 0)
 end
 
 local brand_logo = nil

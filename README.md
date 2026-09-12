@@ -4,20 +4,20 @@ a single file ui kit for roblox. one modulescript, no dependencies, everything a
 
 ## install
 
-grab it straight off the repo. drop this in a `LocalScript` (in `StarterPlayerScripts` or `StarterGui`) with http requests turned on:
+running from an executor, grab it off the repo:
 
 ```lua
 local lucent = loadstring(game:HttpGet("https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua"))()
 ```
 
-or download `lucent.lua` and put it in `ReplicatedStorage`, then:
+`demo.lua` already does that by itself, so you can run it as-is. it tries `game:HttpGet` first and falls through `HttpService` and the executor `request` functions, and it looks for a local `lucent.lua` next to itself or in `ReplicatedStorage` before downloading anything. if it can't get the library it tells you the actual reason instead of just dying.
+
+plain roblox has no `loadstring`, so download `lucent.lua`, drop it in `ReplicatedStorage` and:
 
 ```lua
 local replicated = game:GetService("ReplicatedStorage")
 local lucent = require(replicated:WaitForChild("lucent"))
 ```
-
-either way works. `demo.lua` is a `LocalScript` that builds a full dashboard — run it as-is and it pulls the library from the repo, or drop a `lucent.lua` next to it and it uses that instead.
 
 ## first thing you do
 
