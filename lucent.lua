@@ -72,10 +72,6 @@ local function merge(...)
 	return out
 end
 
-local function is_instance(value)
-	return typeof(value) == "Instance"
-end
-
 local function deep_merge(...)
 	local out = {}
 	for index = 1, select("#", ...) do
@@ -83,7 +79,7 @@ local function deep_merge(...)
 		if source then
 			for key, value in source do
 				local current = out[key]
-				if type(value) == "table" and type(current) == "table" and not is_instance(value) then
+				if typeof(value) == "table" and typeof(current) == "table" then
 					out[key] = deep_merge(current, value)
 				elseif value ~= nil then
 					out[key] = value
@@ -855,6 +851,7 @@ function trove:destroy()
 end
 
 local state = {}
+state.__index = state
 
 local function create_state(initial)
 	local self = setmetatable({
@@ -1981,6 +1978,9 @@ local function append_arc(out, x0, y0, rx, ry, rotation, large, sweep, x1, y1)
 end
 
 function path.flatten(source)
+	if type(source) ~= "string" then
+		return {}
+	end
 	local polylines = {}
 	local current
 	local x, y = 0, 0
@@ -2323,13 +2323,12 @@ end
 
 local function make_canvas(parent, min_x, min_y, width, height, options)
 	options = options or {}
-	local group = Instance.new("CanvasGroup")
+	local group = Instance.new("Frame")
 	group.Name = options.name or "shape"
 	group.BackgroundTransparency = 1
 	group.BorderSizePixel = 0
 	group.ClipsDescendants = false
 	group.Size = UDim2.fromOffset(math.max(2, math.ceil(width)), math.max(2, math.ceil(height)))
-	group.CanvasSize = UDim2.fromOffset(math.max(2, math.ceil(width)), math.max(2, math.ceil(height)))
 	group.Position = UDim2.fromOffset(math.floor(min_x), math.floor(min_y))
 	group.ZIndex = options.zindex or 1
 	if options.layout_order then
@@ -2344,60 +2343,15 @@ local function make_canvas(parent, min_x, min_y, width, height, options)
 	return group
 end
 
-function polygon.stroke(points, width, options)
-	options = options or {}
-	local half = width / 2
-	local items = {}
-	for index = 1, #points - 1 do
-		local start_point = points[index]
-		local end_point = points[index + 1]
-		local direction = end_point - start_point
-		if direction.Magnitude > 1e-4 then
-			local normal = vec2(-direction.Y, direction.X).Unit * half
-			table.insert(items, { start_point + normal, end_point + normal, end_point - normal, start_point - normal })
-		end
-	end
-	if options.caps ~= false then
-		for index, point in points do
-			if index == 1 or index == #points or options.joints then
-				local sides = 6
-				local joint = {}
-				for side = 0, sides - 1 do
-					local angle = side / sides * math_pi * 2
-					table.insert(joint, point + vec2(math_cos(angle), math_sin(angle)) * half)
-				end
-				table.insert(items, joint)
-			end
-		end
-	end
-	return items
-end
-
-function polygon.fill(parent, points, fill_color, options)
-	options = options or {}
-	if #points < 3 then
-		return nil
-	end
-	local padding = options.padding or 0
-	local min_x, min_y, max_x, max_y = bounds_of(points)
-	local width = max_x - min_x + padding * 2
-	local height = max_y - min_y + padding * 2
-	local group = make_canvas(parent, min_x - padding, min_y - padding, width, height, options)
-	local local_points = table.create(#points)
-	for index, point in points do
-		local_points[index] = vec2(point.X - min_x + padding, point.Y - min_y + padding)
-	end
-	polygon.when_parented(group, function()
-		local region = { min = Vector2.zero, max = vec2(width, height) }
-		local first = local_points[1]
-		for index = 2, #local_points - 1 do
-			group:DrawPolygon({ first, local_points[index], local_points[index + 1] }, region, fill_color)
-		end
-		if options.outline then
-			group:DrawPolygon(local_points, region, options.outline)
-		end
-	end)
-	return group
+local function plain_frame(parent, name, color, transparency, zindex)
+	local frame = Instance.new("Frame")
+	frame.Name = name
+	frame.BackgroundColor3 = color
+	frame.BackgroundTransparency = transparency or 0
+	frame.BorderSizePixel = 0
+	frame.ZIndex = zindex
+	frame.Parent = parent
+	return frame
 end
 
 function polygon.wedge(parent, items, fill_color, options)
@@ -2415,20 +2369,111 @@ function polygon.wedge(parent, items, fill_color, options)
 			max_y = math.max(max_y, point.Y)
 		end
 	end
+	local origin = vec2(min_x - padding, min_y - padding)
 	local width = max_x - min_x + padding * 2
 	local height = max_y - min_y + padding * 2
-	local group = make_canvas(parent, min_x - padding, min_y - padding, width, height, options)
-	polygon.when_parented(group, function()
-		local region = { min = Vector2.zero, max = vec2(width, height) }
-		for _, item in items do
-			local translated = table.create(#item)
-			for index, point in item do
-				translated[index] = vec2(point.X - min_x + padding, point.Y - min_y + padding)
+	local group = make_canvas(parent, origin.X, origin.Y, width, height, options)
+	local transparency = options.transparency or 0
+	local base_zindex = options.zindex or 1
+	local inner = options.rotation or 0
+	for _, item in items do
+		local count = #item
+		if count >= 6 then
+			local sum_x, sum_y = 0, 0
+			for _, point in item do
+				sum_x += point.X
+				sum_y += point.Y
 			end
-			group:DrawPolygon(translated, region, fill_color)
+			local center = vec2(sum_x / count, sum_y / count)
+			local radius = (item[1] - center).Magnitude
+			local dot = plain_frame(group, "joint", fill_color, transparency, base_zindex + 1)
+			dot.Size = UDim2.fromOffset(math.max(2, math.ceil(radius * 2)), math.max(2, math.ceil(radius * 2)))
+			dot.Position = UDim2.fromOffset(math.floor(center.X - origin.X - radius), math.floor(center.Y - origin.Y - radius))
+			dot.Rotation = inner
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(1, 0)
+			corner.Parent = dot
+		elseif count == 4 then
+			local start_center = (item[1] + item[4]) / 2
+			local end_center = (item[2] + item[3]) / 2
+			local delta = end_center - start_center
+			local thickness = (item[1] - item[4]).Magnitude
+			local length = delta.Magnitude
+			if length > 0.01 then
+				local bar = plain_frame(group, "segment", fill_color, transparency, base_zindex + 1)
+				bar.AnchorPoint = Vector2.new(0.5, 0.5)
+				bar.Size = UDim2.fromOffset(math.ceil(length + thickness), math.max(1, math.ceil(thickness)))
+				local middle = (start_center + end_center) / 2
+				bar.Position = UDim2.fromOffset(math.floor(middle.X - origin.X), math.floor(middle.Y - origin.Y))
+				bar.Rotation = math.deg(math.atan2(delta.Y, delta.X)) + inner
+			end
 		end
-	end)
+	end
 	return group
+end
+
+function polygon.fill(parent, points, fill_color, options)
+	options = options or {}
+	if #points < 3 then
+		return nil
+	end
+	local padding = options.padding or 0
+	local min_x, min_y, max_x, max_y = bounds_of(points)
+	local origin = vec2(min_x - padding, min_y - padding)
+	local width = max_x - min_x + padding * 2
+	local height = max_y - min_y + padding * 2
+	local group = make_canvas(parent, origin.X, origin.Y, width, height, options)
+	local transparency = options.transparency or 0
+	local base_zindex = options.zindex or 1
+	local step = options.step or 1
+	local x = min_x
+	while x <= max_x do
+		local top, bottom
+		for index = 1, #points do
+			local a = points[index]
+			local b = points[index % #points + 1]
+			if a.X ~= b.X and ((a.X <= x and b.X >= x) or (b.X <= x and a.X >= x)) then
+				local y = a.Y + (b.Y - a.Y) * ((x - a.X) / (b.X - a.X))
+				top = top and math.min(top, y) or y
+				bottom = bottom and math.max(bottom, y) or y
+			end
+		end
+		if top and bottom and bottom - top >= 1 then
+			local bar = plain_frame(group, "scan", fill_color, transparency, base_zindex + 1)
+			bar.Position = UDim2.fromOffset(math.floor(x - origin.X), math.floor(top - origin.Y))
+			bar.Size = UDim2.fromOffset(step, math.ceil(bottom - top))
+		end
+		x += step
+	end
+	return group
+end
+
+function polygon.stroke(polyline, width, options)
+	options = options or {}
+	local half = math.max(width, 1) / 2
+	local items = {}
+	for index = 1, #polyline - 1 do
+		local a = polyline[index]
+		local b = polyline[index + 1]
+		local delta = b - a
+		local length = delta.Magnitude
+		if length > 0.001 then
+			local normal = vec2(-delta.Y / length * half, delta.X / length * half)
+			table.insert(items, { a + normal, b + normal, b - normal, a - normal })
+		end
+	end
+	if options.caps ~= false then
+		for index = 2, #polyline - 1 do
+			local center = polyline[index]
+			local joint = {}
+			for step = 0, 7 do
+				local angle = step / 8 * math_pi * 2
+				table.insert(joint, vec2(center.X + math.cos(angle) * half, center.Y + math.sin(angle) * half))
+			end
+			table.insert(items, joint)
+		end
+	end
+	return items
 end
 
 function polygon.stroke_group(parent, polylines, width, stroke_color, options)
@@ -2440,6 +2485,20 @@ function polygon.stroke_group(parent, polylines, width, stroke_color, options)
 		end
 	end
 	return polygon.wedge(parent, items, stroke_color, options)
+end
+
+function polygon.arc(parent, center, radius, thickness, start_degrees, end_degrees, color, options)
+	if end_degrees <= start_degrees or radius <= 0 then
+		return nil
+	end
+	local sweep = end_degrees - start_degrees
+	local steps = math.max(2, math.ceil(math.abs(sweep) / 4))
+	local points = {}
+	for index = 0, steps do
+		local angle = math.rad(start_degrees + sweep * (index / steps))
+		table.insert(points, vec2(center.X + math_cos(angle) * radius, center.Y + math_sin(angle) * radius))
+	end
+	return polygon.stroke_group(parent, { points }, thickness, color, options)
 end
 
 function polygon.polyline(parent, points, width, stroke_color, options)
@@ -2709,7 +2768,7 @@ function icons.normalize(name)
 	if type(name) ~= "string" then
 		return nil
 	end
-	local key = norm(string.gsub(name, "[/\\ ]+", "-"))
+	local key = string.gsub(string.lower(name), "[%s%./\\%-]+", "_")
 	return icons.aliases[key] or icons.aliases[name] or key
 end
 
@@ -6045,7 +6104,11 @@ function navigation.alert(props)
 	end
 	if props.action then
 		dom.padding(holder, 0, 0, 8, 0)
-		props.action.Parent = holder
+		if type(props.action) == "string" then
+			controls.button({ name = "alert_action", parent = holder, text = props.action, variant = props.action_variant or "outline", size = "sm", on_click = props.on_action })
+		else
+			props.action.Parent = holder
+		end
 	end
 	if props.dismissible then
 		local close_button = controls.icon_button({ name = "alert_close", icon = "close", size = "sm", variant = "ghost", parent = instance, on_click = function()
@@ -6258,14 +6321,15 @@ function navigation.chart(props)
 				end
 				table.insert(closed, Vector2.new(size_value.X, size_value.Y))
 				table.insert(closed, Vector2.new(0, size_value.Y))
-				local fill = Instance.new("CanvasGroup")
+				local fill = Instance.new("Frame")
 				fill.Name = "area"
 				fill.BackgroundTransparency = 1
+				fill.BorderSizePixel = 0
 				fill.Size = UDim2.new(1, 0, 1, 0)
 				fill.ZIndex = canvas.ZIndex + 1
 				fill.Parent = canvas
 				polygon.when_parented(fill, function()
-					polygon.fill(fill, closed, accent, theme_current.alpha_value("area") or 0.82, canvas.ZIndex + 2)
+					polygon.fill(fill, closed, accent, { transparency = theme_current.alpha_value("area") or 0.82, zindex = canvas.ZIndex + 2 })
 				end)
 			end
 			local stroke_holder = dom.frame({ name = "line", parent = canvas, size_of = UDim2.new(1, 0, 1, 0), transparent = true, zindex = canvas.ZIndex + 3 })
@@ -6310,7 +6374,7 @@ function navigation.chart(props)
 				for index, entry in data do
 					local sweep = (tonumber(entry.value) or 0) / total_value * 360
 					local color_value = entry.color and theme_current.color(entry.color) or theme_current.color("chart_" .. tostring(((index - 1) % 6) + 1))
-					polygon.stroke(holder, center, radius - thickness / 2, thickness, start_angle, start_angle + sweep, color_value, canvas.ZIndex + 2)
+					polygon.arc(holder, center, radius - thickness / 2, thickness, start_angle, start_angle + sweep, color_value, { zindex = canvas.ZIndex + 2 })
 					start_angle = start_angle + sweep
 				end
 			end)
@@ -6474,7 +6538,7 @@ function navigation.command(props)
 		end
 	end
 
-	api._trove:connect(box.FocusLost:Connect(function() end))
+	api._trove:add(box.FocusLost:Connect(function() end))
 	interaction.keybind(Enum.KeyCode.Down, function()
 		if api.open:get() then
 			move(1)
