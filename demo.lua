@@ -2,7 +2,20 @@
 -- runs straight off the repo, or alongside a local lucent.lua
 
 local replicated = game:GetService("ReplicatedStorage")
-local source = "https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua?v=2"
+local source = "https://raw.githubusercontent.com/saintdevzz/lucent/1bd10c3/lucent.lua?v=2"
+
+local fallbacks = {
+	"https://raw.githubusercontent.com/saintdevzz/lucent/main/lucent.lua?v=2",
+	"https://cdn.jsdelivr.net/gh/saintdevzz/lucent@main/lucent.lua",
+}
+
+local function urls()
+	local list = { source }
+	for _, entry in ipairs(fallbacks) do
+		table.insert(list, entry)
+	end
+	return list
+end
 
 local function local_copy()
 	local places = { replicated }
@@ -21,30 +34,33 @@ end
 local function fetchers()
 	local http = game:GetService("HttpService")
 	local attempts = {}
-
-	table.insert(attempts, function()
-		return game:HttpGet(source)
-	end)
-	table.insert(attempts, function()
-		return http:HttpGet(source)
-	end)
-	table.insert(attempts, function()
-		return http:GetAsync(source)
-	end)
-
 	local external = request or http_request
-	if external then
-		table.insert(attempts, function()
-			local reply = external({ Url = source, Method = "GET" })
-			return reply.Body or reply.body
-		end)
-	end
+	local syn_request = syn and syn.request
 
-	if syn and syn.request then
+	for _, url in ipairs(urls()) do
 		table.insert(attempts, function()
-			local reply = syn.request({ Url = source, Method = "GET" })
-			return reply.Body or reply.body
+			return game:HttpGet(url)
 		end)
+		table.insert(attempts, function()
+			return http:HttpGet(url)
+		end)
+		table.insert(attempts, function()
+			return http:GetAsync(url)
+		end)
+
+		if external then
+			table.insert(attempts, function()
+				local reply = external({ Url = url, Method = "GET" })
+				return reply.Body or reply.body
+			end)
+		end
+
+		if syn_request then
+			table.insert(attempts, function()
+				local reply = syn_request({ Url = url, Method = "GET" })
+				return reply.Body or reply.body
+			end)
+		end
 	end
 
 	return attempts
