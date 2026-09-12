@@ -1333,30 +1333,51 @@ local function build_theme(options)
 	}
 
 	function merged.color(key)
+		if type(key) == "boolean" then
+			return merged.colors.foreground
+		end
 		return resolve(merged.colors, key) or merged.colors.foreground
 	end
 
 	function merged.alpha_value(key)
+		if type(key) == "boolean" then
+			return 1
+		end
 		return resolve(merged.alpha, key) or 1
 	end
 
 	function merged.radius_of(key)
+		if type(key) == "boolean" then
+			return merged.radius.md
+		end
 		return resolve(merged.radius, key) or merged.radius.md
 	end
 
 	function merged.space_of(key)
+		if type(key) == "boolean" then
+			return merged.space.sm
+		end
 		return resolve(merged.space, key) or merged.space.sm
 	end
 
 	function merged.type_of(key)
+		if type(key) == "boolean" then
+			return merged.type.md
+		end
 		return resolve(merged.type, key) or merged.type.md
 	end
 
 	function merged.font_of(key)
+		if type(key) == "boolean" then
+			return merged.font.sans
+		end
 		return resolve(merged.font, key) or merged.font.sans
 	end
 
 	function merged.layer_of(key)
+		if type(key) == "boolean" then
+			return merged.layer.base
+		end
 		return resolve(merged.layer, key) or merged.layer.base
 	end
 
@@ -2851,13 +2872,26 @@ function dom.frame(props, children)
 	return instance
 end
 
+function dom.font_face(value, weight)
+	if typeof(value) == "Font" then
+		return value
+	end
+	if typeof(value) == "EnumItem" and Font.fromEnum then
+		return Font.fromEnum(value)
+	end
+	if typeof(value) == "string" and string.find(value, "^rbxasset") then
+		return Font.new(value, weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+	end
+	return Font.new("rbxasset://fonts/families/GothamSSm.json", weight or Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+end
+
 function dom.text(props)
 	local label = Instance.new(props.class or "TextLabel")
 	label.Name = props.name or "text"
 	label.BackgroundTransparency = 1
 	label.BorderSizePixel = 0
 	label.Text = props.text or ""
-	label.FontFace = props.font or Font.new("rbxasset://fonts/families/GothamSSm.json", props.weight, Enum.FontStyle.Normal)
+	label.FontFace = dom.font_face(props.font, props.weight)
 	label.TextSize = props.size or 13
 	label.TextColor3 = props.color or Color3.fromRGB(240, 240, 245)
 	label.TextTransparency = props.transparency or 0
@@ -2977,7 +3011,13 @@ end
 function dom.gradient(parent, props)
 	props = props or {}
 	local gradient = Instance.new("UIGradient")
-	gradient.Color = props.color or color.sequence({ "#8B7AF6", "#6C5CE7" })
+	local sequence = props.color
+	if typeof(sequence) == "Color3" then
+		sequence = ColorSequence.new(sequence)
+	elseif typeof(sequence) == "table" and not typeof(sequence) == "ColorSequence" then
+		sequence = color.sequence(sequence)
+	end
+	gradient.Color = typeof(sequence) == "ColorSequence" and sequence or color.sequence({ "#8B7AF6", "#6C5CE7" })
 	gradient.Rotation = props.rotation or 90
 	gradient.Transparency = props.transparency or NumberSequence.new(0)
 	gradient.Offset = props.offset or Vector2.zero
@@ -3034,6 +3074,51 @@ function dom.scale(parent, factor)
 	return ui_scale
 end
 
+local fade_callbacks = setmetatable({}, { __mode = "k" })
+
+local function fadeable(instance)
+	if instance:IsA("BasePart") then
+		return "Transparency"
+	end
+	if instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
+		return "TextTransparency"
+	end
+	if instance:IsA("ImageLabel") or instance:IsA("ImageButton") then
+		return "ImageTransparency"
+	end
+	if instance:IsA("GuiObject") then
+		return "BackgroundTransparency"
+	end
+	return nil
+end
+
+local function remember_fade(instance)
+	if fade_callbacks[instance] then
+		return
+	end
+	local property = fadeable(instance)
+	if not property then
+		return
+	end
+	local base = instance[property]
+	fade_callbacks[instance] = { property = property, base = base }
+end
+
+function dom.group_transparency(instance, alpha)
+	local factor = 1 - math_clamp(alpha or 0, 0, 1)
+	local group = fade_callbacks[instance]
+	if group then
+		instance[group.property] = math_clamp(group.base + (1 - group.base) * factor, 0, 1)
+	end
+	for _, child in instance:GetDescendants() do
+		remember_fade(child)
+		local entry = fade_callbacks[child]
+		if entry then
+			child[entry.property] = math_clamp(entry.base + (1 - entry.base) * factor, 0, 1)
+		end
+	end
+end
+
 function dom.drag(instance, options)
 	options = options or {}
 	local handle = options.handle or instance
@@ -3087,7 +3172,9 @@ function interaction.hover(instance, options)
 	local enabled = create_state(options.enabled ~= false)
 
 	instance.Active = true
-	instance.AutoButtonColor = false
+	if instance:IsA("GuiButton") then
+		instance.AutoButtonColor = false
+	end
 
 	instance.InputBegan:Connect(function(input)
 		if not enabled:get() then
@@ -3120,7 +3207,7 @@ function interaction.hover(instance, options)
 		pressed:set(false)
 	end)
 
-	if options.block == nil and instance:IsA("TextButton") or instance:IsA("ImageButton") then
+	if options.block == nil and (instance:IsA("TextButton") or instance:IsA("ImageButton")) then
 		instance.AutoButtonColor = false
 	end
 
@@ -3346,6 +3433,27 @@ end
 
 local brand_render = {}
 
+local logo_scale_types = {
+	contain = Enum.ScaleType.Fit,
+	cover = Enum.ScaleType.Crop,
+	crop = Enum.ScaleType.Crop,
+	fill = Enum.ScaleType.Stretch,
+	fit = Enum.ScaleType.Fit,
+	slice = Enum.ScaleType.Slice,
+	stretch = Enum.ScaleType.Stretch,
+	tile = Enum.ScaleType.Tile,
+}
+
+local function logo_scale_type(value)
+	if typeof(value) == "EnumItem" then
+		return value
+	end
+	if type(value) == "string" then
+		return logo_scale_types[string.lower(value)] or Enum.ScaleType.Fit
+	end
+	return Enum.ScaleType.Fit
+end
+
 local function logo_instance(config, parent)
 	local mark = config.logo
 	if typeof(mark) == "Instance" then
@@ -3356,7 +3464,7 @@ local function logo_instance(config, parent)
 			if config.logo_color then
 				clone.ImageColor3 = config.logo_color
 			end
-			clone.ScaleType = Enum.ScaleType[title_case(config.logo_fit or "contain")]
+			clone.ScaleType = logo_scale_type(config.logo_fit)
 		end
 		return clone
 	end
@@ -3368,7 +3476,7 @@ local function logo_instance(config, parent)
 		parent = parent,
 		image = tostring(mark),
 		size_of = UDim2.fromScale(1, 1),
-		scale_type = Enum.ScaleType[title_case(config.logo_fit or "contain")],
+		scale_type = logo_scale_type(config.logo_fit),
 		color = config.logo_color or Color3.new(1, 1, 1),
 	})
 	if config.logo_radius and config.logo_radius > 0 then
@@ -3828,6 +3936,29 @@ function lucent_primitives.stacked(props, children)
 	return holder
 end
 
+local function automatic_size_of(value)
+	if typeof(value) == "EnumItem" then
+		return value
+	end
+	if value == false then
+		return Enum.AutomaticSize.None
+	end
+	return Enum.AutomaticSize.Y
+end
+
+local function scrolling_direction_of(value)
+	if typeof(value) == "EnumItem" then
+		return value
+	end
+	if value == "x" or value == "horizontal" then
+		return Enum.ScrollingDirection.X
+	end
+	if value == "xy" or value == "both" then
+		return Enum.ScrollingDirection.XY
+	end
+	return Enum.ScrollingDirection.Y
+end
+
 function lucent_primitives.scroll(props, children)
 	props = props or {}
 	local theme_current = theme.get()
@@ -3841,17 +3972,16 @@ function lucent_primitives.scroll(props, children)
 	instance.AnchorPoint = props.anchor or Vector2.zero
 	instance.ZIndex = props.zindex or 1
 	instance.CanvasSize = props.canvas or UDim2.new()
-	instance.AutomaticCanvasSize = props.auto_canvas or Enum.AutomaticSize.Y
+	instance.AutomaticCanvasSize = automatic_size_of(props.auto_canvas)
 	instance.ScrollBarThickness = props.thickness or (props.hide_bar and 0 or 6)
 	instance.ScrollBarImageTransparency = props.bar_transparency or 0.7
 	instance.ScrollBarImageColor3 = props.bar_color or theme_current.color("border_strong")
-	instance.ScrollingDirection = props.direction or Enum.ScrollingDirection.Y
+	instance.ScrollingDirection = scrolling_direction_of(props.fill or props.direction)
 	instance.ElasticBehavior = props.elastic or Enum.ElasticBehavior.WhenScrollable
 	instance.VerticalScrollBarInset = props.inset or Enum.ScrollBarInset.None
 	instance.ScrollingEnabled = props.enabled ~= false
 	instance.ClipsDescendants = props.clip ~= false
 	instance.LayoutOrder = props.layout_order or 0
-	instance.ScrollBarCornerRadius = px(999)
 	if props.parent then
 		instance.Parent = props.parent
 	end
@@ -4573,7 +4703,7 @@ function controls.checkbox(props)
 	})
 	check.Position = UDim2.fromScale(0.5, 0.5)
 	check.AnchorPoint = Vector2.new(0.5, 0.5)
-	check.GroupTransparency = value:get() and 0 or 1
+	dom.group_transparency(check, value:get() and 1 or 0)
 
 	local function refresh()
 		local active = value:get()
@@ -4583,7 +4713,7 @@ function controls.checkbox(props)
 			preset = "snappy",
 			on_step = function(alpha)
 				instance.BackgroundColor3 = color.mix(theme_current.color("card"), theme_current.color(props.active_color or "primary"), alpha)
-				check.GroupTransparency = 1 - alpha
+				dom.group_transparency(check, alpha)
 			end,
 		})
 	end
@@ -4895,7 +5025,6 @@ function overlays.create(kind, props)
 		animation.tween(blocker, { BackgroundTransparency = props.scrim_transparency or theme_current.alpha_value("overlay") }, { duration = theme_current.motion.base, ease = "quad" })
 		surface.Size = UDim2.new(base_size.X.Scale, base_size.X.Offset * enter.from, base_size.Y.Scale, base_size.Y.Offset * enter.from)
 		surface.BackgroundTransparency = enter.from_t
-		surface.UIScale = nil
 		local scale = dom.scale(surface, enter.from)
 		animation.spring({
 			from = enter.from,
@@ -6432,7 +6561,7 @@ function navigation.command(props)
 	box.PlaceholderText = props.placeholder or "type a command or search..."
 	box.PlaceholderColor3 = theme_current.color("muted_foreground")
 	box.TextColor3 = theme_current.color("foreground")
-	box.FontFace = theme_current.font_of("sans")
+	box.FontFace = dom.font_face(theme_current.font_of("sans"))
 	box.TextSize = theme_current.type_of("md")
 	box.TextXAlignment = Enum.TextXAlignment.Left
 	box.ClearTextOnFocus = false
