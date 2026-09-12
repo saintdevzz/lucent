@@ -854,6 +854,8 @@ function trove:destroy()
 	end
 end
 
+local state = {}
+
 local function create_state(initial)
 	local self = setmetatable({
 		_value = initial,
@@ -5364,6 +5366,7 @@ function overlays.toast(props)
 		info = "info",
 	}
 	local tone = props.variant or "default"
+	local close_toast
 	local card = dom.frame({
 		name = "toast",
 		parent = toast_holder,
@@ -5421,7 +5424,7 @@ function overlays.toast(props)
 	end
 
 	local closed = false
-	local function close_toast()
+	close_toast = function()
 		if closed then
 			return
 		end
